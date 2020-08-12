@@ -37,6 +37,7 @@ def all_days_feature(org):
 def user_encoder_feature(org):
     data = org[org['day'] < 7]
     train = org[org['day'] == 7]
+    # 统计用户7天内的行为次数以及成交次数
     user7 = data.groupby('user_id', as_index=False)['is_trade'].agg({'user_buy': 'sum', 'user_cnt': 'count'})
     user7['user_allday_buy_click']=user7.apply(lambda x:str(x['user_buy'])+'-'+str(x['user_cnt']),axis=1)
     data=org[org['day']==6]
@@ -234,7 +235,7 @@ def rank_today_feature(data):
 
 if __name__ == '__main__':
     org=pd.read_csv('../data/origion_concat.csv')
-	user_encoder_feature(org)
+    user_encoder_feature(org)
     rank_7days_feature(all_days_feature(org))
     rank_6day_feature(latest_day_feature(org))
     rank_today_feature(today_cvr_feature(org))

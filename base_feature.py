@@ -40,17 +40,22 @@ def run_query_feature(i):
     features=[]
     for index,row in data.iterrows():
         feature={}
-        feature['instance_id']=row['instance_id']
+        feature['instance_id']=row['instance_id'] # 样本id
         if index%100==0:
             print(index)
         col=['user_id','predict_category_property','context_timestamp','day','query1','query','item_id','shop_id','item_brand_id','item_city_id','context_page_id','item_category_list']
+        # 从query_i的data中选取当前user_id的所有样本
         tmp=data[data['user_id']==row['user_id']][['instance_id']+col]
+        # 之前有几次相同的property
         before_query_cnt=len(tmp[(tmp['predict_category_property']==row['predict_category_property'])& (tmp['context_timestamp']<row['context_timestamp'])&(tmp['day']<=row['day'])])
+        # 之前有几次相同的query
         before_query_1_cnt = len(tmp[(tmp['query1'] == row['query1']) & (tmp['context_timestamp'] < row['context_timestamp']) & (tmp['day'] <= row['day'])])
         before_query_all_cnt = len(tmp[(tmp['query'] == row['query']) & (tmp['context_timestamp'] < row['context_timestamp']) & (tmp['day'] <= row['day'])])
+        # 之后有几次相同的property
         after_query_cnt = len(tmp[(tmp['predict_category_property'] == row['predict_category_property']) & (tmp['context_timestamp'] > row['context_timestamp'])&(tmp['day']<=row['day'])])
         after_query_1_cnt = len(tmp[(tmp['query1'] == row['query1']) & (tmp['context_timestamp'] > row['context_timestamp']) & (tmp['day'] <= row['day'])])
         after_query_all_cnt = len(tmp[(tmp['query'] == row['query']) & (tmp['context_timestamp'] > row['context_timestamp']) & (tmp['day'] <= row['day'])])
+        # 之前有几次相同的item_id且category_property
         before_query_item_cnt=len(tmp[(tmp['item_id']==row['item_id'])&(tmp['predict_category_property']==row['predict_category_property'])& (tmp['context_timestamp']<row['context_timestamp'])&(tmp['day']<=row['day'])])
         before_query_1_item_cnt = len(tmp[(tmp['item_id'] == row['item_id']) & (tmp['query1'] == row['query1']) & (tmp['context_timestamp'] < row['context_timestamp']) & (tmp['day'] <= row['day'])])
         before_query_all_item_cnt = len(tmp[(tmp['item_id'] == row['item_id']) & (tmp['query'] == row['query']) & (tmp['context_timestamp'] < row['context_timestamp']) & (tmp['day'] <= row['day'])])
@@ -187,6 +192,7 @@ def query_data_prepare():
         start = size * i
         end = (i + 1) * size if (i + 1) * size < l_data else l_data
         user = users[start:end]
+        # 将样本按照每个user来分割,然后存放到不同的文件中去
         t_data = pd.merge(data, user, on='user_id').reset_index(drop=True)
         t_data.to_csv('../data/user_data/query_'+str(i)+'.csv',index=False)
         print(len(t_data))

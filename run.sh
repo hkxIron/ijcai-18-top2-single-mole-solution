@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 python data.py
 python base_feature.py
 python count_feature.py
