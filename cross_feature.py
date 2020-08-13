@@ -11,23 +11,35 @@ import numpy as np
 
 cross_feature_num=100
 
-def LGB_test(train_x,train_y,test_x,test_y,cate_col=None):
-    if cate_col:
-        data = pd.concat([train_x, test_x])
-        for fea in cate_col:
+def LGB_test(train_x, train_y, test_x, test_y, cate_col_list=None):
+    if cate_col_list:
+        data = pd.concat([train_x, test_x]) # 类别特征需要用train+test一起进行编码
+        for fea in cate_col_list:
             data[fea]=data[fea].fillna('-1')
-            data[fea] = LabelEncoder().fit_transform(data[fea].apply(str))
+            data[fea] = LabelEncoder().fit_transform(data[fea].apply(str)) # 对类别特征进行转换
         train_x=data[:len(train_x)]
         test_x=data[len(train_x):]
+
     print("LGB test")
     clf = lgb.LGBMClassifier(
-        boosting_type='gbdt', num_leaves=31, reg_alpha=0.0, reg_lambda=1,
-        max_depth=-1, n_estimators=3000, objective='binary',
-        subsample=0.7, colsample_bytree=0.7, subsample_freq=1,  # colsample_bylevel=0.7,
-        learning_rate=0.01, min_child_weight=25,random_state=2018,n_jobs=50
+        boosting_type='gbdt',
+        num_leaves=31,
+        reg_alpha=0.0,
+        reg_lambda=1,
+        max_depth=-1,
+        n_estimators=3000,
+        objective='binary',
+        subsample=0.7,
+        colsample_bytree=0.7,
+        subsample_freq=1,  # colsample_bylevel=0.7,
+        learning_rate=0.01,
+        min_child_weight=25,
+        random_state=2018,
+        categorical_feature=cate_col_list,
+        n_jobs=50
     )
     clf.fit(train_x, train_y,eval_set=[(train_x,train_y),(test_x,test_y)],early_stopping_rounds=100)
-    feature_importances=sorted(zip(train_x.columns,clf.feature_importances_),key=lambda x:x[1])
+    feature_importances=sorted(zip(train_x.columns,clf.feature_importances_),key=lambda x:x[1]) # 输出特征重要程度
     return clf.best_score_[ 'valid_1']['binary_logloss'],feature_importances
 
 def off_test_split(org,cate_col=None):
