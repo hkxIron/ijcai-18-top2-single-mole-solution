@@ -12,7 +12,7 @@ def all_days_feature(org):
     data=org[org['day']<7]
     col=['user_id','item_id','item_brand_id','shop_id','item_category_list','item_city_id','query1','query','context_page_id','predict_category_property']
     train=org[org['day']==7][['instance_id']+col]
-    user=data.groupby('user_id',as_index=False)['is_trade'].agg({'user_buy':'sum','user_cnt':'count'})
+    user=data.groupby('user_id',as_index=False)['is_trade'].agg({'user_buy':'sum','user_cnt':'count'}) # 显式指定了列名,因此是对is_trade分别计算了sum, count, sum重命名为user_buy, count重命名为user_cnt
     user['user_7days_cvr']=(user['user_buy'])/(user['user_cnt']+3)
     items=col[1:]
     train=pd.merge(train,user[['user_id','user_7days_cvr']],on='user_id',how='left')
@@ -96,11 +96,13 @@ def cvr(train_data, predict_data):
         tmp=train_data.groupby(col, as_index=False)['is_trade'].agg({col + '_today_cvr': 'mean'})
         predict_data = pd.merge(predict_data, tmp, on=col, how='left')
 
+    # 任意两个维度的交叉特征来统计转化率
     for i in range(len(cols)):
         for j in range(i+1, len(cols)):
-            tmp=train_data.groupby([cols[i], cols[j]], as_index=False)['is_trade'].agg({'today_' + cols[i] + cols[j] + '_cvr': 'mean'})
-            predict_data = pd.merge(predict_data, tmp, on=[cols[i], cols[j]], how='left')
             print([cols[i], cols[j]])
+            tmp=train_data.groupby([cols[i], cols[j]], as_index=False)['is_trade'].agg({'today_' + cols[i] + cols[j] + '_cvr': 'mean'})
+            predict_data = pd.merge(predict_data, tmp, on=[cols[i], cols[j]], how='left') # 两个key需要相等
+
     return predict_data
 # [['instance_id','today_user_cvr','today_item_cvr','today_brand_cvr','today_shop_cvr','today_cate_cvr','today_city_cvr']]
 
@@ -128,17 +130,18 @@ def today_cvr_feature(org):
     predict=cvr(train, predict)
 
     trains=[]
-    size=10
+    size=10 # 将train数据划分为10等分
     for i in range(size):
         trains.append(get_batch_data(train, i, size))
 
     res=[]
     res.append(predict)
     for i in range(size):
+        # 任意两份数据之间计算转化率
         res.append(cvr(pd.concat([trains[j] for j in range(size) if i !=j]).reset_index(drop=True), trains[i]))
-    data=pd.concat(res).reset_index(drop=True)
+    data=pd.concat(res, axis=0).reset_index(drop=True)
     #data=data[['instance_id','today_user_cvr','today_item_cvr','today_brand_cvr','today_shop_cvr','today_cate_cvr','today_city_cvr','today_query_cvr']]
-    data=data.drop(col,axis=1)
+    data=data.drop(col,axis=1) # 将原始数据中的这些列去掉后保存
     data.to_csv('../data/today_cvr_feature.csv', index=False)
     return data
 
@@ -170,7 +173,7 @@ def today_cvr_feature(org):
 """
 # ['user_id','item_id','item_brand_id','shop_id','item_category_list','item_city_id','predict_category_property','context_page_id', 'query1', 'query']
 def rank_6day_feature(data):
-    data['user_cvr_brand_6day_rank']=data.groupby('item_brand_id')['user_6day_cvr'].rank(ascending=False,method='dense')
+    data['user_cvr_brand_6day_rank']=data.groupby('item_brand_id')['user_6day_cvr'].rank(ascending=False,method='dense') # 商品转化率在品牌下面的排名
     data['user_cvr_shop_6day_rank'] = data.groupby('shop_id')['user_6day_cvr'].rank(ascending=False, method='dense')
     data['user_cvr_cate_6day_rank'] = data.groupby('item_category_list')['user_6day_cvr'].rank(ascending=False, method='dense')
     data['user_cvr_city_6day_rank'] = data.groupby('item_city_id')['user_6day_cvr'].rank(ascending=False, method='dense')
@@ -191,6 +194,7 @@ def rank_6day_feature(data):
     data['shop_cvr_query1_6day_rank'] = data.groupby('query1')['shop_id_6day_cvr'].rank(ascending=False, method='dense')
     data['brand_cvr_query_6day_rank'] = data.groupby('query')['item_brand_id_6day_cvr'].rank(ascending=False, method='dense')
     data['brand_cvr_query1_6day_rank'] = data.groupby('query1')['item_brand_id_6day_cvr'].rank(ascending=False, method='dense')
+    # 只选取部分列进行保存
     data=data[['instance_id','user_cvr_brand_6day_rank','user_cvr_shop_6day_rank','user_cvr_cate_6day_rank','user_cvr_city_6day_rank','item_cvr_shop_6day_rank','item_cvr_brand_6day_rank','item_cvr_cate_6day_rank','item_cvr_city_6day_rank','shop_cvr_brand_6day_rank','shop_cvr_cate_6day_rank','shop_cvr_city_6day_rank','brand_cvr_city_6day_rank','brand_cvr_shop_6day_rank','cate_cvr_city_6day_rank','cate_cvr_shop_6day_rank','item_cvr_query_6day_rank','item_cvr_query1_6day_rank','shop_cvr_query_6day_rank','shop_cvr_query1_6day_rank','brand_cvr_query_6day_rank','brand_cvr_query1_6day_rank'
     ]]
     data.to_csv('../data/rank_feature_6day.csv',index=False)
