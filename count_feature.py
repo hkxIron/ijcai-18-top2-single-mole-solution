@@ -16,18 +16,19 @@ def all_days_feature(org):
     user['user_7days_cvr']=(user['user_buy'])/(user['user_cnt']+3)
     items=col[1:]
     train=pd.merge(train,user[['user_id','user_7days_cvr']],on='user_id',how='left')
-    for item in items:
+    for item in items:# 统计 item_id, item_brand_id,shop_id等不同维度的数据
         tmp=data.groupby(item,as_index=False)['is_trade'].agg({item+'_buy':'sum',item+'_cnt':'count'})
-        tmp[item+'_7days_cvr'] = tmp[item+'_buy'] / tmp[item+'_cnt']
-        train = pd.merge(train, tmp[[item, item+'_7days_cvr']], on=item, how='left')
+        tmp[item+'_7days_cvr'] = tmp[item+'_buy'] / tmp[item+'_cnt'] # 计算该维度上的转化率
+        train = pd.merge(train, tmp[[item, item+'_7days_cvr']], on=item, how='left') #
         print(item)
+
     for i in range(len(items)):
-        for j in range(i+1,len(items)):
-            egg=[items[i],items[j]]
-            tmp = data.groupby(egg, as_index=False)['is_trade'].agg({'_'.join(egg) + '_buy': 'sum', '_'.join(egg) + '_cnt': 'count'})
-            tmp['_'.join(egg) + '_7days_cvr'] = tmp['_'.join(egg) + '_buy'] / tmp['_'.join(egg) + '_cnt']
-            train = pd.merge(train, tmp[egg+['_'.join(egg) + '_7days_cvr']], on=egg, how='left')
-            print(egg)
+        for j in range(i+1,len(items)): # 计算任意两个维度上的转化率
+            two_keys=[items[i], items[j]]
+            tmp = data.groupby(two_keys, as_index=False)['is_trade'].agg({'_'.join(two_keys) + '_buy': 'sum', '_'.join(two_keys) + '_cnt': 'count'})
+            tmp['_'.join(two_keys) + '_7days_cvr'] = tmp['_'.join(two_keys) + '_buy'] / tmp['_'.join(two_keys) + '_cnt']
+            train = pd.merge(train, tmp[two_keys + ['_'.join(two_keys) + '_7days_cvr']], on=two_keys, how='left')
+            print(two_keys)
     train.drop(col, axis=1).to_csv('../data/7days_cvr_feature.csv',index=False)
     return train
 
@@ -43,6 +44,7 @@ def user_encoder_feature(org):
     data=org[org['day']==6]
     user6=data.groupby('user_id', as_index=False)['is_trade'].agg({'user_buy': 'sum', 'user_cnt': 'count'})
     user6['user_6day_buy_click'] = user6.apply(lambda x: str(x['user_buy']) + '-' + str(x['user_cnt']), axis=1)
+
     train=pd.merge(train,user7,on='user_id',how='left')
     train = pd.merge(train, user6, on='user_id', how='left')
     train[['instance_id','user_allday_buy_click','user_6day_buy_click']].to_csv('../data/user_buy_click_feature.csv')
@@ -51,7 +53,6 @@ def user_encoder_feature(org):
 """
 7号前一天，6号的统计特征
 用户/商品/品牌/店铺/类别/城市 点击次数，购买次数，转化率，占前面所有天的占比
-
 """
 def latest_day_feature(org):
     data = org[org['day'] ==6]
@@ -60,46 +61,50 @@ def latest_day_feature(org):
     user = data.groupby('user_id', as_index=False)['is_trade'].agg({'user_buy': 'sum', 'user_cnt': 'count'})
     user['user_6day_cvr'] = (user['user_buy']) / (user['user_cnt'] + 3)
     train = pd.merge(train, user[['user_id', 'user_6day_cvr']], on='user_id', how='left')
-    items = col[1:]
-    for item in items:
-        tmp=data.groupby(item,as_index=False)['is_trade'].agg({item+'_buy':'sum',item+'_cnt':'count'})
-        tmp[item+'_6day_cvr'] = tmp[item+'_buy'] / tmp[item+'_cnt']
-        train = pd.merge(train, tmp[[item, item+'_6day_cvr']], on=item, how='left')
-        print(item)
-    for i in range(len(items)):
-        for j in range(i+1,len(items)):
-            egg=[items[i],items[j]]
-            tmp = data.groupby(egg, as_index=False)['is_trade'].agg({'_'.join(egg) + '_buy': 'sum', '_'.join(egg) + '_cnt': 'count'})
-            tmp['_'.join(egg) + '_6day_cvr'] = tmp['_'.join(egg) + '_buy'] / tmp['_'.join(egg) + '_cnt']
-            train = pd.merge(train, tmp[egg+['_'.join(egg) + '_6day_cvr']], on=egg, how='left')
-            print(egg)
+    candidate_cols = col[1:]
+    for col in candidate_cols:
+        tmp=data.groupby(col, as_index=False)['is_trade'].agg({col + '_buy': 'sum', col + '_cnt': 'count'})
+        tmp[col + '_6day_cvr'] = tmp[col + '_buy'] / tmp[col + '_cnt']
+        train = pd.merge(train, tmp[[col, col + '_6day_cvr']], on=col, how='left')
+        print(col)
+
+    for i in range(len(candidate_cols)):
+        for j in range(i+1, len(candidate_cols)):
+            join_cols=[candidate_cols[i], candidate_cols[j]]
+            tmp = data.groupby(join_cols, as_index=False)['is_trade'].agg({'_'.join(join_cols) + '_buy': 'sum', '_'.join(join_cols) + '_cnt': 'count'})
+            tmp['_'.join(join_cols) + '_6day_cvr'] = tmp['_'.join(join_cols) + '_buy'] / tmp['_'.join(join_cols) + '_cnt']
+            train = pd.merge(train, tmp[join_cols + ['_'.join(join_cols) + '_6day_cvr']], on=join_cols, how='left')
+            print(join_cols)
+
     train.drop(col, axis=1).to_csv('../data/6day_cvr_feature.csv',index=False)
     return train
 
 """
 当天的交易率特征，交叉统计
 """
-
 # calc data，join data
 # user_id,item_id,item_brand_id,shop_id,item_category_list,item_city_id,predict_category_property
-def cvr(c_data, j_data):
-    col=['user_id','item_id','item_brand_id','shop_id','item_category_list','item_city_id','predict_category_property','context_page_id', 'query1', 'query']
-    j_data=j_data[['instance_id']+col]
-    user = c_data.groupby('user_id', as_index=False)['is_trade'].agg({'user_buy': 'sum', 'user_cnt': 'count'})
+def cvr(train_data, predict_data):
+    user = train_data.groupby('user_id', as_index=False)['is_trade'].agg({'user_buy': 'sum', 'user_cnt': 'count'})
     user['user_today_cvr'] = (user['user_buy']) / (user['user_cnt'] + 3)
-    j_data = pd.merge(j_data, user[['user_id', 'user_today_cvr']], on='user_id', how='left')
-    for item in col[1:]:
-        tmp=c_data.groupby(item, as_index=False)['is_trade'].agg({item+'_today_cvr': 'mean'})
-        j_data = pd.merge(j_data, tmp, on=item, how='left')
-    for i in range(len(col)):
-        for j in range(i+1,len(col)):
-            tmp=c_data.groupby([col[i],col[j]], as_index=False)['is_trade'].agg({'today_'+col[i]+col[j]+'_cvr': 'mean'})
-            j_data = pd.merge(j_data, tmp, on=[col[i],col[j]], how='left')
-            print([col[i],col[j]])
-    return j_data
+
+    cols=['user_id', 'item_id', 'item_brand_id', 'shop_id', 'item_category_list', 'item_city_id', 'predict_category_property', 'context_page_id', 'query1', 'query']
+    predict_data=predict_data[['instance_id'] + cols]
+    predict_data = pd.merge(predict_data, user[['user_id', 'user_today_cvr']], on='user_id', how='left')
+
+    for col in cols[1:]:
+        tmp=train_data.groupby(col, as_index=False)['is_trade'].agg({col + '_today_cvr': 'mean'})
+        predict_data = pd.merge(predict_data, tmp, on=col, how='left')
+
+    for i in range(len(cols)):
+        for j in range(i+1, len(cols)):
+            tmp=train_data.groupby([cols[i], cols[j]], as_index=False)['is_trade'].agg({'today_' + cols[i] + cols[j] + '_cvr': 'mean'})
+            predict_data = pd.merge(predict_data, tmp, on=[cols[i], cols[j]], how='left')
+            print([cols[i], cols[j]])
+    return predict_data
 # [['instance_id','today_user_cvr','today_item_cvr','today_brand_cvr','today_shop_cvr','today_cate_cvr','today_city_cvr']]
 
-def split(data, index, size):
+def get_batch_data(data, index, size):
     import math
     size = math.ceil(len(data) / size)
     start = size * index
@@ -107,20 +112,30 @@ def split(data, index, size):
     return data[start:end]
 
 def today_cvr_feature(org):
-    col = ['user_id', 'item_id', 'item_brand_id', 'shop_id', 'item_category_list', 'item_city_id',
-           'predict_category_property', 'context_page_id', 'query1', 'query']
+    col = ['user_id',
+           'item_id',
+           'item_brand_id',
+           'shop_id',
+           'item_category_list',
+           'item_city_id',
+           'predict_category_property',
+           'context_page_id',
+           'query1',
+           'query']
     data=org[org['day']==7]
-    train=data[data['is_trade']>-1]
-    predict=data[data['is_trade']<0]
-    predict=cvr(train,predict)
+    train=data[data['is_trade']>-1] # 训练数据
+    predict=data[data['is_trade']<0] # is_trade=-1,为待预测数据
+    predict=cvr(train, predict)
+
     trains=[]
     size=10
     for i in range(size):
-        trains.append(split(train, i, size))
+        trains.append(get_batch_data(train, i, size))
+
     res=[]
     res.append(predict)
     for i in range(size):
-        res.append(cvr(pd.concat([trains[j] for j in range(size) if i !=j]).reset_index(drop=True),trains[i]))
+        res.append(cvr(pd.concat([trains[j] for j in range(size) if i !=j]).reset_index(drop=True), trains[i]))
     data=pd.concat(res).reset_index(drop=True)
     #data=data[['instance_id','today_user_cvr','today_item_cvr','today_brand_cvr','today_shop_cvr','today_cate_cvr','today_city_cvr','today_query_cvr']]
     data=data.drop(col,axis=1)

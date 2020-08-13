@@ -10,27 +10,27 @@ def today(x):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(x))
 
 def getday(x):
-    day=int(x.split(' ')[0].split('-')[-1])
+    day=int(x.get_batch_data(' ')[0].get_batch_data('-')[-1])
     if day==31:
         day=0
     return day
 
 def gethour(x):
-    hour=int(x.split(' ')[1].split(':')[0])
-    minute=int(x.split(' ')[1].split(':')[1])
+    hour=int(x.get_batch_data(' ')[1].get_batch_data(':')[0])
+    minute=int(x.get_batch_data(' ')[1].get_batch_data(':')[1])
     minute=1 if minute>=30 else 0
     return hour*2+minute
 
 def same_cate(x):
-    cate = set(x['item_category_list'].split(';'))
-    cate2 = set([i.split(':')[0] for i in x['predict_category_property'].split(';')])
+    cate = set(x['item_category_list'].get_batch_data(';'))
+    cate2 = set([i.get_batch_data(':')[0] for i in x['predict_category_property'].get_batch_data(';')])
     return len(cate & cate2)
 
 def same_property(x):
-    property_a = set(x['item_property_list'].split(';'))
+    property_a = set(x['item_property_list'].get_batch_data(';'))
     a = []
-    for i in [i.split(':')[1].split(',') for i in x['predict_category_property'].split(';') if
-              len(i.split(':')) > 1]:
+    for i in [i.get_batch_data(':')[1].get_batch_data(',') for i in x['predict_category_property'].get_batch_data(';') if
+              len(i.get_batch_data(':')) > 1]:
         a += i
     property_b = set(a)
     return len(property_a & property_b)
@@ -85,7 +85,7 @@ def fix_instance_id(data):
 预测的属性，top1,合并top1-5
 """
 def property_feature(org):
-    tmp=org['item_property_list'].apply(lambda x:x.split(';')).values
+    tmp=org['item_property_list'].apply(lambda x:x.get_batch_data(';')).values
     property_dict={}
     property_list=[]
     for i in tmp:
@@ -97,7 +97,7 @@ def property_feature(org):
             property_dict[i] = 1
     print('dict finish')
     def top(x):
-        propertys=x.split(';')
+        propertys=x.get_batch_data(';')
         cnt=[property_dict[i] for i in propertys]
         res=sorted(zip(propertys,cnt),key=lambda x:x[1],reverse=True)
         top1=res[0][0]
@@ -144,17 +144,17 @@ else:
     data['same_cate']=data.apply(same_cate,axis=1) #相同类别数
     # data.loc[data['same_cate']>2,'same_cate']=2 #将相同类别数3规范为2，因为测试集中没有3
     data['same_property']=data.apply(same_property,axis=1) #相同属性数
-    data['property_num']=data['item_property_list'].apply(lambda x:len(x.split(';'))) #属性的数目
-    data['pred_cate_num']=data['predict_category_property'].apply(lambda x:len(x.split(';'))) #query的类别数目
+    data['property_num']=data['item_property_list'].apply(lambda x:len(x.get_batch_data(';'))) #属性的数目
+    data['pred_cate_num']=data['predict_category_property'].apply(lambda x:len(x.get_batch_data(';'))) #query的类别数目
     def f(x):
         try:
-            return len([i for i in reduce((lambda x, y: x + y), [i.split(':')[1].split(',') for i in x.split(';') if len(i.split(':'))>1]) if i != '-1'])
+            return len([i for i in reduce((lambda x, y: x + y), [i.get_batch_data(':')[1].get_batch_data(',') for i in x.get_batch_data(';') if len(i.get_batch_data(':')) > 1]) if i != '-1'])
         except:
             return 0
     data['pred_prop_num']=data['predict_category_property'].apply(f) #query的属性数目
-    data['query1']=data['predict_category_property'].apply(lambda x:x.split(';')[0].split(':')[0]) #query第一个类别
-    data['query']=data['predict_category_property'].apply(lambda x:'-'.join(sorted([i.split(':')[0] for i in [i for i in x.split(';')]]))) #query的全部类别
-    data['cate'] = data['item_category_list'].apply(lambda x: x.split(';')[1])
+    data['query1']=data['predict_category_property'].apply(lambda x:x.get_batch_data(';')[0].get_batch_data(':')[0]) #query第一个类别
+    data['query']=data['predict_category_property'].apply(lambda x:'-'.join(sorted([i.get_batch_data(':')[0] for i in [i for i in x.get_batch_data(';')]]))) #query的全部类别
+    data['cate'] = data['item_category_list'].apply(lambda x: x.get_batch_data(';')[1])
     # data.loc[data['same_property']>5,'same_property']=5
     data=fillna(data.copy())
     data=pd.merge(data,property_feature(data),on='instance_id',how='left') #拆分属性
