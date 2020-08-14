@@ -8,28 +8,29 @@ import pandas as pd
 用户/商品/品牌/店铺/类别/城市/page/query 点击次数，购买次数，转化率(buy/cnt+3)
 
 """
-def all_days_feature(org):
-    data=org[org['day']<7]
-    col=['user_id','item_id','item_brand_id','shop_id','item_category_list','item_city_id','query1','query','context_page_id','predict_category_property']
-    train=org[org['day']==7][['instance_id']+col]
-    user=data.groupby('user_id',as_index=False)['is_trade'].agg({'user_buy':'sum','user_cnt':'count'}) # 显式指定了列名,因此是对is_trade分别计算了sum, count, sum重命名为user_buy, count重命名为user_cnt
+def all_days_feature(orgin_data):
+    data=orgin_data[orgin_data['day'] < 7]
+    cols=['user_id', 'item_id', 'item_brand_id', 'shop_id', 'item_category_list', 'item_city_id', 'query1', 'query', 'context_page_id', 'predict_category_property']
+    train=orgin_data[orgin_data['day'] == 7][['instance_id'] + cols]
+    # 显式指定了列名,因此是对is_trade分别计算了sum, count, sum重命名为user_buy, count重命名为user_cnt
+    user=data.groupby('user_id',as_index=False)['is_trade'].agg({'user_buy':'sum','user_cnt':'count'})
     user['user_7days_cvr']=(user['user_buy'])/(user['user_cnt']+3)
-    items=col[1:]
+    col_list= cols[1:]
     train=pd.merge(train,user[['user_id','user_7days_cvr']],on='user_id',how='left')
-    for item in items:# 统计 item_id, item_brand_id,shop_id等不同维度的数据
-        tmp=data.groupby(item,as_index=False)['is_trade'].agg({item+'_buy':'sum',item+'_cnt':'count'})
-        tmp[item+'_7days_cvr'] = tmp[item+'_buy'] / tmp[item+'_cnt'] # 计算该维度上的转化率
-        train = pd.merge(train, tmp[[item, item+'_7days_cvr']], on=item, how='left') #
-        print(item)
+    for col in col_list:# 统计 item_id, item_brand_id,shop_id等不同维度的行为次数以及成交次数以及成交率
+        tmp=data.groupby(col, as_index=False)['is_trade'].agg({col + '_buy': 'sum', col + '_cnt': 'count'})
+        tmp[col + '_7days_cvr'] = tmp[col + '_buy'] / tmp[col + '_cnt'] # 计算该维度上的转化率
+        train = pd.merge(train, tmp[[col, col + '_7days_cvr']], on=col, how='left') #
+        print(col)
 
-    for i in range(len(items)):
-        for j in range(i+1,len(items)): # 计算任意两个维度上的转化率
-            two_keys=[items[i], items[j]]
+    for i in range(len(col_list)):
+        for j in range(i+1, len(col_list)): # 计算任意两个维度上的转化率
+            two_keys=[col_list[i], col_list[j]]
             tmp = data.groupby(two_keys, as_index=False)['is_trade'].agg({'_'.join(two_keys) + '_buy': 'sum', '_'.join(two_keys) + '_cnt': 'count'})
             tmp['_'.join(two_keys) + '_7days_cvr'] = tmp['_'.join(two_keys) + '_buy'] / tmp['_'.join(two_keys) + '_cnt']
             train = pd.merge(train, tmp[two_keys + ['_'.join(two_keys) + '_7days_cvr']], on=two_keys, how='left')
             print(two_keys)
-    train.drop(col, axis=1).to_csv('../data/7days_cvr_feature.csv',index=False)
+    train.drop(cols, axis=1).to_csv('../data/7days_cvr_feature.csv', index=False)
     return train
 
 """
@@ -253,8 +254,8 @@ def rank_today_feature(data):
     data.to_csv('../data/rank_feature_today.csv',index=False)
 
 if __name__ == '__main__':
-    org=pd.read_csv('../data/origion_concat.csv')
-    user_encoder_feature(org)
-    rank_7days_feature(all_days_feature(org))
-    rank_6day_feature(latest_day_feature(org))
-    rank_today_feature(today_cvr_feature(org))
+    orgin_data=pd.read_csv('../data/origion_concat.csv')
+    user_encoder_feature(orgin_data)
+    rank_7days_feature(all_days_feature(orgin_data))
+    rank_6day_feature(latest_day_feature(orgin_data))
+    rank_today_feature(today_cvr_feature(orgin_data))

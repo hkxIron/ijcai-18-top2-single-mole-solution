@@ -223,7 +223,7 @@ def first_ocr_feature(org):
         tmp=first_ocr(data, item)
         train=pd.merge(train,tmp,on=item,how='left')
         print(item)
-    #today=today_ocr_feature(org)
+    #today=today_ocr_feature(orgin_data)
     #train=pd.merge(train,today,on='instance_id',how='left')
     train=train.drop(items, axis=1)
     train.to_csv('../data/ocr_feature.csv',index=False)

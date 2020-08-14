@@ -36,6 +36,7 @@ def concate_feature(data):
     当前query之前之后点击了几个query
     """
 def run_query_feature(i):
+    # data为该query下的所有数据
     data=pd.read_csv('../data/user_data/query_'+str(i)+'.csv')
     features=[]
     for index,row in data.iterrows():
@@ -46,7 +47,7 @@ def run_query_feature(i):
         col=['user_id','predict_category_property','context_timestamp','day','query1','query','item_id','shop_id','item_brand_id','item_city_id','context_page_id','item_category_list']
         # 从query_i的data中选取当前user_id的所有样本
         tmp=data[data['user_id']==row['user_id']][['instance_id']+col]
-        # 之前有几次相同的property
+        # 该userid之前有几次相同的property, 此处的len就是计算次数,不过这种方式有点挫,是不是可以用groupby一次性计算出所有的userid的数据
         before_query_cnt=len(tmp[(tmp['predict_category_property']==row['predict_category_property'])& (tmp['context_timestamp']<row['context_timestamp'])&(tmp['day']<=row['day'])])
         # 之前有几次相同的query
         before_query_1_cnt = len(tmp[(tmp['query1'] == row['query1']) & (tmp['context_timestamp'] < row['context_timestamp']) & (tmp['day'] <= row['day'])])
