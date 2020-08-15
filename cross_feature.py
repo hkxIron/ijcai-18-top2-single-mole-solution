@@ -7,19 +7,25 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 import lightgbm as lgb
-import numpy as np
+import xgboost as xgb
 
 cross_feature_num=100
 
-def LGB_test(train_x, train_y, test_x, test_y, cate_col_list=None):
-    if cate_col_list:
+# category:类别特征
+def LGB_test(train_x, train_y, test_x, test_y, category_col_list=None):
+    if category_col_list:
         data = pd.concat([train_x, test_x]) # 类别特征需要用train+test一起进行编码
-        for fea in cate_col_list:
+        # 将类别特征用label encoder去编码成index
+        for fea in category_col_list:
             data[fea]=data[fea].fillna('-1')
+            # 直接将转换后的特征写回原来的特征列
             data[fea] = LabelEncoder().fit_transform(data[fea].apply(str)) # 对类别特征进行转换
+
+        # 合并之后,再拆分
         train_x=data[:len(train_x)]
         test_x=data[len(train_x):]
 
+    # xgb.XGBClassifier
     print("LGB test")
     clf = lgb.LGBMClassifier(
         boosting_type='gbdt',
@@ -35,11 +41,17 @@ def LGB_test(train_x, train_y, test_x, test_y, cate_col_list=None):
         learning_rate=0.01,
         min_child_weight=25,
         random_state=2018,
-        categorical_feature=cate_col_list,
+        # lgb可以显式指定哪些特征属于类别特征,xgb就不能指定,所以xgb需要将类别特one-hot化
+        categorical_feature=category_col_list,
         n_jobs=50
     )
-    clf.fit(train_x, train_y,eval_set=[(train_x,train_y),(test_x,test_y)],early_stopping_rounds=100)
-    feature_importances=sorted(zip(train_x.columns,clf.feature_importances_),key=lambda x:x[1]) # 输出特征重要程度
+    clf.fit(train_x, train_y,
+            eval_set=[(train_x,train_y),(test_x,test_y)],
+            early_stopping_rounds=100)
+
+    feature_importances=sorted(zip(train_x.columns, clf.feature_importances_),
+                               key=lambda x:x[1]) # 输出特征重要程度
+    # 取测试集的最好的分数
     return clf.best_score_[ 'valid_1']['binary_logloss'],feature_importances
 
 def off_test_split(org,cate_col=None):
@@ -77,10 +89,11 @@ def LGB_predict(data,file):
     res=pd.merge(testb,res,on='instance_id',how='left')
     res[['instance_id', 'predicted_score']].to_csv('../submit/' + file + '.txt', sep=' ', index=False)
 
-def add(f1,f2):
-    for i in f2:
-        f1=pd.merge(f1,i,on='instance_id',how='left')
-    return f1
+# 连续join多个数据集
+def merge_data(data1, data_list):
+    for i in data_list:
+        data1=pd.merge(data1, i, on='instance_id', how='left')
+    return data1
 
 if __name__ == '__main__':
     org=pd.read_csv('../data/origion_concat.csv')
@@ -95,24 +108,28 @@ if __name__ == '__main__':
     nobuy = pd.read_csv('../data/nobuy_feature.csv')
     trend = pd.read_csv('../data/trend_feature.csv')
     trend = trend[[i for i in trend.columns if 'cnt6' not in i]]
-    var = pd.read_csv('../data/item_shop_var_feature.csv')
+    item_shop_var = pd.read_csv('../data/item_shop_var_feature.csv')
     user_buy_click = pd.read_csv('../data/user_buy_click_feature.csv') #need proc caterory feature
     property = pd.read_csv('../data/property_feature.csv') #need proc caterory feature
     full = pd.read_csv('../data/full_count_feature.csv')
     day6 = pd.read_csv('../data/day6_count_feature.csv')
     days7 = pd.read_csv('../data/days7_count_feature.csv')
+
     # user_buy_click,property need proc caterory feature
-    data = add(train,[query, leak, day6_cvr, days7_cvr,
-        day6_rank, days7_rank, comp, nobuy, trend, full,day6, days7, var
-        ])
+    data = merge_data(train, [query, leak, day6_cvr, days7_cvr,
+                              day6_rank, days7_rank, comp, nobuy, trend,
+                              full, day6, days7, item_shop_var
+                              ])
     data.to_csv('../data/final_base.csv',index=False)
+
     base = pd.read_csv('../data/final_base.csv')
-    cross=base[['hour48', 'hour',  'user_id','query1','query','is_trade','day','item_category_list',
+    cross=base[['hour48', 'hour', 'user_id','query1','query','is_trade','day','item_category_list',
              'instance_id', 'item_property_list', 'context_id', 'context_timestamp', 'predict_category_property']]
     features=off_test_split(base)
     feature=[i[0] for i in features[-cross_feature_num:]]
     feature.remove('shop_id')
     feature.remove('item_id')
+
     # shop_id,item_id
     for i in range(len(feature)):
         for j in range(i+1,len(feature)):

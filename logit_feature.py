@@ -12,30 +12,38 @@ import pandas as pd
 
 """连续未购买7个特征，线下提升万0.5"""
 def user_continue_nobuy(org):
-    data = org[org['day'] < 7].sort_values(by=['user_id','context_timestamp'])
+    # 每条记录先按user_id,timestamp排序
+    data = org[org['day'] < 7].sort_values(by=['user_id','context_timestamp'], ascending=True)
     train=org[org.day==7][['instance_id','user_id']]
-    def f(x):
+
+    def no_buy_count(grouped_x):
+        max_cnt = 0
         max_no_buy=0
-        res=[]
-        for i in x:
-            if i==0:
-                max_no_buy+=1
-                res.append(max_no_buy)
+        for is_trade in grouped_x:
+            if is_trade==0:
+                max_no_buy += 1
+                max_cnt = max(max_cnt, max_no_buy)
             else:
                 max_no_buy=0
-        return 0 if len(res)==0 else max(res)
-    user_nobuy= data.groupby('user_id',as_index=False)['is_trade'].agg({'user_continue_nobuy_click_cnt':lambda x:f(x)})
+        return max_cnt
+
+    user_nobuy = data.groupby('user_id', as_index=False)['is_trade']\
+        .agg({'user_continue_nobuy_click_cnt':lambda x:no_buy_count(x)})
+
     print('user_continue_nobuy_click_cnt finish')
     data=data[data.day==6].sort_values(by=['user_id','context_timestamp'])
-    day6_user_nobuy=data.groupby('user_id', as_index=False)['is_trade'].agg({'day6_user_continue_nobuy_click_cnt': lambda x: f(x)})
+    day6_user_nobuy=data.groupby('user_id', as_index=False)['is_trade']\
+        .agg({'day6_user_continue_nobuy_click_cnt': lambda x: no_buy_count(x)})
+
     print('day6_user_continue_nobuy_click_cnt finish')
-    train=pd.merge(train,user_nobuy,on='user_id',how='left')
+    train=pd.merge(train, user_nobuy,on='user_id',how='left')
     train = pd.merge(train, day6_user_nobuy, on='user_id', how='left')
     data = org[org['day'] ==6]
     user_buy_items=data[data.is_trade==1].groupby('user_id', as_index=False)['item_id'].agg({'day6_user_buy_items':lambda x:len(set(x))})
     user_nobuy_items=data.groupby('user_id', as_index=False)['item_id'].agg({'day6_user_nobuy_items': lambda x: len(set(x))})
     user_buy_shops = data[data.is_trade == 1].groupby('user_id', as_index=False)['item_id'].agg({'day6_user_buy_shops': lambda x: len(set(x))})
     user_nobuy_shops = data.groupby('user_id', as_index=False)['item_id'].agg({'day6_user_nobuy_shops': lambda x: len(set(x))})
+
     print('day6_user_nobuy finish')
     train=pd.merge(train,user_buy_items,on='user_id',how='left')
     train = pd.merge(train, user_nobuy_items, on='user_id', how='left')
@@ -47,13 +55,13 @@ def user_continue_nobuy(org):
     print('nobuy_feature finish')
     # return train
 
-
 def trend(data,item):
     tmp = data.groupby([item, 'day'], as_index=False)['is_trade'].agg({'buy': 'sum', 'cnt': 'count'})
     features = []
     for key, df in tmp.groupby(item, as_index=False):
         feature = {}
         feature[item] = key
+        # 遍历groupd中的元素
         for index, row in df.iterrows():
             feature[item+'buy' + str(row['day'])] = row['buy']
             feature[item+'cnt' + str(row['day'])] = row['cnt']
@@ -71,38 +79,68 @@ def trend(data,item):
     #     features[item + 'cnt_trend_' + str(i + 1)] = features[item + 'cnt_trend_' + str(i + 1)].apply(f)
     # features[item+'cnt_trend'] = features[item + 'cnt_trend_1'] + features[item + 'cnt_trend_2'] + features[item + 'cnt_trend_3'] + features[item + 'cnt_trend_4'] + features[item + 'cnt_trend_5'] + features[item + 'cnt_trend_6']
     # return features.drop([item + 'buy_trend_'+str(i+1) for i in range(6)]+[item + 'cnt_trend_'+str(i+1) for i in range(6)],axis=1)
+
 """
 商品，店铺，类别，城市，品牌点击购买趋势，前7天统计，比上一天高为1，否则为0，再统计1的次数，7个特征*5
 """
-
-
-def trend_f(data, item):
-    tmp = data.groupby([item, 'day'], as_index=False)['is_trade'].agg({'buy': 'sum', 'cnt': 'count'})
-    features = []
-    for key, df in tmp.groupby(item, as_index=False):
-        feature = {}
-        feature[item] = key
+def trend_expode(data, col='shop_id'): # 该函数有点像hive里的expode,将行转成列
+    import json
+    # col可能为店铺,因此tmp为以店铺,day为key统计成交次数以及行为次数
+    tmp = data.groupby([col, 'day'], as_index=False)['is_trade'].agg({'buy': 'sum', 'cnt': 'count'})
+    # tmp列名店铺, day, buy, cnt
+    samples = []
+    # 以 店铺为key,进行二次聚合
+    for key, df in tmp.groupby(col, as_index=False):
+        sample = {}
+        sample[col] = key  # 店铺id, 每个sample是一条样本
         for index, row in df.iterrows():
-            feature[item + 'buy' + str(int(row['day']))] = row['buy']
-            feature[item + 'cnt' + str(int(row['day']))] = row['cnt']
-        features.append(feature)
-    features = pd.DataFrame(features)
-    return features
+            sample[col + '_buy_' + str(int(row['day']))] = row['buy']  # 以shop为key,将不同天数的成交以行行为次数当成不同的列名
+            sample[col + '_cnt_' + str(int(row['day']))] = row['cnt']
+
+        samples.append(sample)
+
+    print("samples:", samples)
+    """
+    fetaures是一个列表,每个列表是一行样本, 其中列表里的元素是一个dict,dict的不同key代表不同的列名
+    这样的方式一般可用于样本特征的稀疏存储,
+    因此最后的列名为:['shop_id', 'shop_id_buy_0', 'shop_id_buy_2', 'shop_id_buy_3',...]
+    [
+        {
+            "shop_id": 0,
+            "shop_id_buy_2": 0,
+            "shop_id_cnt_2": 1,
+            "shop_id_buy_5": 0,
+            "shop_id_cnt_5": 2
+        },
+        {
+            "shop_id": 1,
+            "shop_id_buy_2": 0,
+            "shop_id_cnt_2": 1,
+            "shop_id_buy_7": 0,
+            "shop_id_cnt_7": 1
+        }
+    ]
+    """
+    samples = pd.DataFrame(samples)
+    return samples, tmp
 
 def trend_feature(org):
     data=org[org.day<7]
-    col = ['item_id', 'item_brand_id', 'shop_id', 'item_category_list', 'item_city_id',
+    cols = ['item_id', 'item_brand_id', 'shop_id', 'item_category_list', 'item_city_id',
            'predict_category_property', 'context_page_id', 'query1', 'query']
-    train=org[org.day==7][['instance_id']+col]
-    items=col
-    for item in items:
-        train=pd.merge(train,trend_f(data, item),on=item,how='left')
-        print(item+' finish')
-    train=train.drop(items,axis=1)
-    for item in items:
+    train=org[org.day==7][['instance_id'] + cols]
+
+    # 将不同的统计维度的feature join起来
+    for col in cols:
+        print(col + ' finish')
+        train=pd.merge(train, trend_expode(data, col)[0], on=col, how='left')
+
+    train=train.drop(cols, axis=1) # 将原始的列名去掉
+    for col in cols:
         for day in range(6):
-            train['_'.join([item,str(day+1),'d',str(day),'cnt'])]=train[item + 'cnt' +str(day+1)]/train[item + 'cnt' +str(day)]
-            train['_'.join([item, str(day + 1), 'd', str(day), 'buy'])]=train[item + 'buy' +str(day+1)]/train[item + 'buy' +str(day)]
+            train['_'.join([col, str(day + 1), 'd', str(day), 'cnt'])]= train[col + 'cnt' + str(day + 1)] / train[col + 'cnt' + str(day)]
+            train['_'.join([col, str(day + 1), 'd', str(day), 'buy'])]= train[col + 'buy' + str(day + 1)] / train[col + 'buy' + str(day)]
+
     train=train[[i for i in train.columns if 'cnt6' not in i]]
     train.to_csv('../data/trend_feature.csv',index=False)
     print('trend_feature finish')
@@ -110,22 +148,25 @@ def trend_feature(org):
 
 # 商品，店铺，类别，城市，品牌，页面 被一次性购买的比例,次数 ，一次性购买次数/购买次数  线下测试只有item,shop的shot_rate有用
 # 用户，商品，店铺，类别，城市，品牌，页面 7号一次性购买次数，交叉提取
-# 如何定义一次性购买  cvr=1
-def oneshot(data,item):
-    tmp = data.groupby([item], as_index=False)['is_trade'].agg({item + '_buy': 'sum'})
-    shot = data.groupby([item, 'user_id'], as_index=False)['is_trade'].agg({'is_shot': 'mean'})
-    shot = shot[shot.is_shot == 1].groupby([item], as_index=False)['is_shot'].agg({item + 'shot_num': 'count'})
-    tmp = pd.merge(tmp, shot, on=[item], how='left')
-    tmp[item+'_shot_rate'] = tmp[item +'shot_num'] / tmp[item + '_buy']
-    return tmp[[item,item+'_shot_rate']]
+# 如何定义一次性购买: cvr=1, 认为转化率为1就是一次性购买
+def oneshot(data, col):
+    tmp = data.groupby([col], as_index=False)['is_trade'].agg({col + '_buy': 'sum'})
+    # shop_id, user_id
+    shot = data.groupby([col, 'user_id'], as_index=False)['is_trade'].agg({'is_shot': 'mean'})
+    # is_shot=1: 即每次行为都成交就是一次性购买
+    shot = shot[shot["is_shot"] == 1].groupby([col], as_index=False)['is_shot']\
+        .agg({col + 'shot_num': 'count'})
+    tmp = pd.merge(tmp, shot, on=[col], how='left')
+    tmp[col + '_shot_rate'] = tmp[col + 'shot_num'] / tmp[col + '_buy']
+    return tmp[[col, col + '_shot_rate']]
 
 # calc data，join data
 def today_shot(c_data, j_data):
-    items=['item_id','shop_id','query','query1']
-    j_data=j_data[['instance_id']+items]
-    for item in items:
-        j_data = pd.merge(j_data, oneshot(c_data, item), on=item, how='left')
-    j_data=j_data.drop(items,axis=1)
+    cols=['item_id', 'shop_id', 'query', 'query1']
+    j_data=j_data[['instance_id'] + cols]
+    for col in cols:
+        j_data = pd.merge(j_data, oneshot(c_data, col), on=col, how='left')
+    j_data=j_data.drop(cols, axis=1)
     j_data.columns=['instance_id','today_item_shot_rate','today_shop_shot_rate','today_query_shot_rate','today_query1_shot_rate']
     return j_data
 
@@ -135,10 +176,10 @@ def today_shot_feature(org):
     train=data[data['is_trade']>-1]
     predict=data[data['is_trade']<0]
     predict=today_shot(train,predict)
-    train1,train2=train_test_split(train,test_size=0.5,random_state=1024)
-    train22=today_shot(train1, train2)
-    train11=today_shot(train2, train1)
-    data=pd.concat([train11,train22,predict]).reset_index(drop=True)
+    train1,train2=train_test_split(train, test_size=0.5, random_state=1024)
+    train12=today_shot(train1, train2)
+    train21=today_shot(train2, train1)
+    data=pd.concat([train21, train12, predict], axis=0).reset_index(drop=True)
     return data
 
 def day6_shot_feature(org):
@@ -158,14 +199,18 @@ def oneshot_feature(org):
     for item in items:
         train=pd.merge(train,oneshot(data, item),on=item,how='left')
         print(item+' finish')
+
     train = train.drop(items, axis=1)
     print(train.columns)
     today=today_shot_feature(org)
     print(today.columns)
+
     day6=day6_shot_feature(org)
     print(day6.columns)
-    train=pd.merge(train,today,on='instance_id',how='left')
+
+    train=pd.merge(train, today, on='instance_id', how='left')
     train = pd.merge(train, day6, on='instance_id', how='left')
+
     train.to_csv('../data/oneshot_feature.csv', index=False)
     print('oneshot_feature finish')
 
@@ -178,10 +223,12 @@ def first_ocr(data,item):
         if (a is np.nan) | (b is np.nan):
             return np.nan
         return (datetime.datetime.strptime(str(b), "%Y-%m-%d %H:%M:%S") - datetime.datetime.strptime(str(a),"%Y-%m-%d %H:%M:%S")).seconds
+
     ocr=data.groupby(item,as_index=False)['context_timestamp'].agg({'min_ocr_time':'min'})
-    buy=data[data.is_trade==1].groupby(item,as_index=False)['context_timestamp'].agg({'min_buy_time':'min'})
-    data=pd.merge(ocr,buy,on=item,how='left')
-    data[item+'_ocr_buy_diff_day6']=data.apply(lambda x:sec_diff(x['min_ocr_time'],x['min_buy_time']),axis=1)
+    buy=data[data["is_trade"]==1].groupby(item, as_index=False)['context_timestamp']\
+        .agg({'min_buy_time':'min'})
+    data=pd.merge(ocr, buy, on=item, how='left')
+    data[item+'_ocr_buy_diff_day6'] = data.apply(lambda x:sec_diff(x['min_ocr_time'],x['min_buy_time']),axis=1)
     return data[[item,item+'_ocr_buy_diff_day6']]
 
 # calc data，join data
@@ -243,22 +290,29 @@ def item_shop_var_feature(org):
     shop_cates=['shop_review_num_level','shop_review_positive_rate','shop_star_level','shop_score_service','shop_score_delivery','shop_score_description']
     data=org[org.day<7]
     train=org[org.day==7][['instance_id']+col+item_cates+shop_cates]
+
     for cate in item_cates:
         train=pd.merge(train,data.groupby('item_id',as_index=False)[cate].agg({'item_id_'+cate+'_var':np.std,'item_id_'+cate+'_avg':'mean'}),on='item_id',how='left')
         train['_'.join(['diff',cate,'today_d_7days'])]=train[cate]-train['item_id_'+cate+'_avg']
+
     for cate in shop_cates:
         train=pd.merge(train,data.groupby('shop_id',as_index=False)[cate].agg({'shop_id_'+cate+'_var':np.std,'shop_id_'+cate+'_avg':'mean'}),on='shop_id',how='left')
         train['_'.join(['diff', cate, 'today_d_7days'])] = train[cate] - train['shop_id_' + cate + '_avg']
+
     data = org[org.day == 6]
+
     for cate in item_cates:
         avg=data.groupby('item_id',as_index=False)[cate].agg({'item_id_day6'+cate+'_avg':'mean'})
         tmp=pd.merge(train,avg,on='item_id',how='left')
         train['_'.join(['diff',cate,'today_d_6day'])]=tmp[cate]-tmp['item_id_day6'+cate+'_avg']
+
     for cate in shop_cates:
         avg=data.groupby('shop_id',as_index=False)[cate].agg({'shop_id_day6'+cate+'_avg':'mean'})
         tmp=pd.merge(train,avg,on='shop_id',how='left')
         train['_'.join(['diff',cate,'today_d_6day'])]=tmp[cate]-tmp['shop_id_day6'+cate+'_avg']
-    train.drop(col + item_cates + shop_cates, axis=1).to_csv('../data/item_shop_var_feature.csv',index=False)
+
+    train.drop(col + item_cates + shop_cates, axis=1)\
+        .to_csv('../data/item_shop_var_feature.csv',index=False)
 
 if __name__ == '__main__':
     org=pd.read_csv('../data/origion_concat.csv')
